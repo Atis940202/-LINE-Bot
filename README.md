@@ -45,12 +45,12 @@
    - 於 Apps Script 點擊「部署 → 新部署」。
    - 選擇「Web 應用程式」，輸入描述後設定：
      - **執行身份**：自己（擁有者）。
-     - **存取權限**：任何擁有連結的人。
+    - **存取權限**：Anyone（任何人）。
    - 部署後取得 URL，更新至 `Config` 表的 `BASE_URL`。
 
 6. **設定 LINE Webhook**
    - 前往 LINE Developers Console → Messaging API → Webhook 設定。
-   - 將 Webhook URL 設為：`BASE_URL?a=callback`。
+   - 將 Webhook URL 設為：`BASE_URL`（不需額外查詢參數）。
    - 確認啟用 Webhook，並於「回覆設定」保持「使用 webhook」。
 
 7. **建立每日觸發器**
@@ -59,11 +59,17 @@
      - 事件來源：時間驅動
      - 類型：日曆排程 → 每天 → 時間：上午 9:00（系統會以 Asia/Taipei 執行）。
 
+## 部署與 Verify 重點
+
+- 部署 → 管理部署 → Web app → 誰可以存取：Anyone（任何人）（不是「任何具有 Google 帳戶」）。
+- Webhook URL 只貼 /exec（不加任何 query）；先 Update 再 Verify。
+- 若重新部署，需在 LINE 後台重新按 Update + Verify。
+
 ## 操作說明
 
 - **Webhook 測試**：將 LINE Bot 加入好友後，輸入「場次」即可收到近期活動列表。
 - **後台**：瀏覽 `GET BASE_URL?a=admin&secret=你的密碼` 可查看統計與開啟試算表。
-- **健康檢查**：`GET BASE_URL?a=ok` 會回傳 `OK`。
+- **健康檢查**：`GET BASE_URL` 會回傳 `OK`。
 
 ## 測試案例建議
 

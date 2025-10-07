@@ -10,14 +10,16 @@ function getFinalWebhookUrl() {
 }
 
 function testWebhook() {
-  const url = 'https://script.google.com/macros/s/AKfycbw9EIV-GcePNZAyHuOZFWB__bGNVKibN8YkKWTCxYn3899FfidH_bAdMhpYcHgkaHpHtQ/exec'; // 你的 Web app URL
+  const base = getConfigValue('BASE_URL') || ScriptApp.getService().getUrl();
+  const url = typeof base === 'string' ? base.replace(/\/dev$/, '/exec') : ScriptApp.getService().getUrl();
   const res = UrlFetchApp.fetch(url, {
     method: 'post',
     contentType: 'application/json',
-    payload: JSON.stringify({ events: [] })
+    payload: JSON.stringify({ events: [] }),
+    muteHttpExceptions: true
   });
-  Logger.log('code=' + res.getResponseCode()); // 要 200
-  Logger.log('body=' + res.getContentText());  // OK
+  Logger.log('code=' + res.getResponseCode());
+  Logger.log('body=' + res.getContentText());
 }
 
 function getDb() {
@@ -108,38 +110,83 @@ function seedSample() {
 
 // GET：健康檢查 / 後台
 function doGet(e) {
-  const a = (e && e.parameter && e.parameter.a || '').toLowerCase();
-  if (a === 'admin') return handleAdmin(e);
-  return ContentService.createTextOutput('OK'); // 其他 GET 一律 200
+  if (e && e.parameter && e.parameter.a === 'admin') {
+    return handleAdmin(e);
+  }
+  return ContentService.createTextOutput('OK').setMimeType(ContentService.MimeType.TEXT);
 }
 
 // POST：LINE Webhook（就算出錯也回 200）
 function doPost(e) {
-  try { return handleCallback(e || {}); }
-  catch (err) {
-    Logger.log('doPost error: ' + err.message);
-    return ContentService.createTextOutput('OK');
+  try {
+    const output = handleCallback(e || {});
+    if (output) {
+      return output;
+    }
+  } catch (err) {
+    Logger.log('doPost error: %s', err && err.stack ? err.stack : err);
   }
+  return ContentService.createTextOutput('OK').setMimeType(ContentService.MimeType.TEXT);
 }
 
 // handleCallback ：容忍空/壞 JSON
 function handleCallback(e) {
-  let body = {};
-  try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (_){ body = {}; }
+  const raw = (e && e.postData && e.postData.contents) || '{}';
+  let body;
+  try {
+    body = JSON.parse(raw);
+  } catch (_) {
+    body = {};
+  }
   const events = Array.isArray(body.events) ? body.events : [];
-  if (events.length === 0) return ContentService.createTextOutput('OK');
-  // 你的事件處理...
-  events.forEach(ev => {
-    const uid = ev.source && ev.source.userId;
-    if (!uid) return;
-    const u = ensureUser(uid);
-    if (ev.type === 'follow') {
-      safe(() => linePush(uid, { type:'text', text:'歡迎～輸入「場次」看近期活動，或輸入「指令」看用法。' }));
-    } else if (ev.type === 'message' && ev.message?.type === 'text') {
-      handleText(u, ev.message.text || '', ev.replyToken);
+  if (events.length === 0) {
+    return ContentService.createTextOutput('OK').setMimeType(ContentService.MimeType.TEXT);
+  }
+  events.forEach(event => {
+    if (!event) {
+      return;
+    }
+    if (event.type === 'follow') {
+      const userId = event.source && event.source.userId;
+      if (!userId) {
+        return;
+      }
+      try {
+        ensureUser(userId);
+      } catch (err) {
+        Logger.log('ensureUser error (follow): %s', err && err.stack ? err.stack : err);
+      }
+      if (typeof onFollow === 'function') {
+        try {
+          onFollow(event);
+        } catch (err) {
+          Logger.log('onFollow error: %s', err && err.stack ? err.stack : err);
+        }
+      }
+    } else if (event.type === 'message' && event.message && event.message.type === 'text') {
+      const userId = event.source && event.source.userId;
+      if (!userId) {
+        return;
+      }
+      let user;
+      try {
+        user = ensureUser(userId);
+      } catch (err) {
+        Logger.log('ensureUser error (message): %s', err && err.stack ? err.stack : err);
+        return;
+      }
+      try {
+        if (typeof handleText === 'function') {
+          handleText(user, event.message.text || '', event.replyToken, event);
+        } else if (typeof onTextMessage === 'function') {
+          onTextMessage(event);
+        }
+      } catch (err) {
+        Logger.log('handleText error: %s', err && err.stack ? err.stack : err);
+      }
     }
   });
-  return ContentService.createTextOutput('OK');
+  return ContentService.createTextOutput('OK').setMimeType(ContentService.MimeType.TEXT);
 }
 
 /**
