@@ -1,0 +1,26 @@
+<?!= include('admin_styles'); ?>
+<div class="container">
+  <h1>同人場行事曆 Dashboard</h1>
+  <div class="stats">
+    <div class="stat-card">
+      <span class="stat-label">使用者</span>
+      <span class="stat-value"><?= userCount ?></span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">場次</span>
+      <span class="stat-value"><?= eventCount ?></span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">攤位</span>
+      <span class="stat-value"><?= boothCount ?></span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">收藏</span>
+      <span class="stat-value"><?= favoriteCount ?></span>
+    </div>
+  </div>
+  <p class="link"><a href="<?= spreadsheetUrl ?>" target="_blank">開啟試算表</a></p>
+  <footer>
+    <p>若資料為空，請先在 Apps Script 執行 <code>initSheets()</code> 與 <code>seedSample()</code>。</p>
+  </footer>
+</div>
