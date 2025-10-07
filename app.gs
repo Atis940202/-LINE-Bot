@@ -2,6 +2,17 @@
  * 同人場行事曆＋攤位收藏 LINE Bot
  * Apps Script (V8) implementation.
  */
+function testWebhook() {
+  const url = 'https://script.google.com/macros/s/AKfycbw9EIV-GcePNZAyHuOZFWB__bGNVKibN8YkKWTCxYn3899FfidH_bAdMhpYcHgkaHpHtQ/exec'; // 你的 Web app URL
+  const res = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify({ events: [] })
+  });
+  Logger.log('code=' + res.getResponseCode()); // 要 200
+  Logger.log('body=' + res.getContentText());  // OK
+}
+
 function getDb() {
   const prop = PropertiesService.getScriptProperties();
   const saved = prop.getProperty('DB_ID');
@@ -88,61 +99,21 @@ function seedSample() {
   boothsSheet.getRange(boothsSheet.getLastRow() + 1, 1, boothRows.length, boothRows[0].length).setValues(boothRows);
 }
 
-/**
- * Web App POST 入口。
- */
-function doPost(e) {
-  try {
-    if (!e) {
-      return createTextResponse('NG');
-    }
-    const params = e.parameter || {};
-    const action = (params.a || '').toLowerCase();
-    if (action !== 'callback') {
-      return createTextResponse('NG');
-    }
-
-    const body = e.postData && e.postData.contents ? JSON.parse(e.postData.contents) : null;
-    if (!body || !body.events) {
-      Logger.log('Invalid webhook payload');
-      return createTextResponse('OK');
-    }
-
-    body.events.forEach(event => {
-      try {
-        handleLineEvent(event);
-      } catch (err) {
-        Logger.log('handleLineEvent error: %s', err && err.stack ? err.stack : err);
-      }
-    });
-    return createTextResponse('OK');
-  } catch (error) {
-    Logger.log('doPost error: %s', error && error.stack ? error.stack : error);
-    return createTextResponse('OK');
-  }
+// GET：健康檢查 / 後台
+function doGet(e) {
+  const a = (e && e.parameter && e.parameter.a || '').toLowerCase();
+  if (a === 'admin') return handleAdmin(e); // 後台照舊
+  return ContentService.createTextOutput('OK'); // 其他 GET 一律 200
 }
 
-/**
- * Web App GET 入口。
- */
-function doGet(e) {
-  const params = e && e.parameter ? e.parameter : {};
-  const action = (params.a || '').toLowerCase();
-  if (action === 'admin') {
-    const secret = params.secret || '';
-    if (!secret) {
-      return HtmlService.createHtmlOutput('Auth Error');
-    }
-    const savedSecret = getConfigValue('ADMIN_SECRET');
-    if (!savedSecret || secret !== savedSecret) {
-      return HtmlService.createHtmlOutput('Auth Error');
-    }
-    return renderAdminDashboard();
+// POST：LINE Webhook（不管發生什麼都回 200）
+function doPost(e) {
+  try {
+    return handleCallback(e || {});
+  } catch (err) {
+    Logger.log('doPost error: ' + err.message);
+    return ContentService.createTextOutput('OK');
   }
-  if (action === 'ok') {
-    return createTextResponse('OK');
-  }
-  return createTextResponse('NG');
 }
 
 /**
@@ -163,26 +134,27 @@ function getConfigValue(key) {
   return '';
 }
 
-/**
- * 處理 LINE webhook 事件。
- */
-function handleLineEvent(event) {
-  if (!event || !event.type) {
-    return;
-  }
-  switch (event.type) {
-    case 'follow':
-      return onFollow(event);
-    case 'message':
-      if (event.message && event.message.type === 'text') {
-        return onTextMessage(event);
-      }
-      break;
-    default:
-      break;
-  }
-}
+// 安全的 callback：容忍空 body/非 JSON
+function handleCallback(e) {
+  let bodyText = '';
+  try { bodyText = (e && e.postData && e.postData.contents) || '{}'; } catch (_) {}
+  let body; try { body = JSON.parse(bodyText); } catch (_) { body = {}; }
+  const events = Array.isArray(body.events) ? body.events : [];
+  if (events.length === 0) return ContentService.createTextOutput('OK'); // Verify 送空陣列也 200
 
+  // 你的原本事件處理
+  events.forEach(ev => {
+    const uid = ev.source && ev.source.userId;
+    if (!uid) return;
+    const u = ensureUser(uid);
+    if (ev.type === 'follow') {
+      safe(() => linePush(uid, { type: 'text', text: '歡迎～輸入「場次」看近期活動，或輸入「指令」看用法。' }));
+    } else if (ev.type === 'message' && ev.message && ev.message.type === 'text') {
+      handleText(u, ev.message.text || '', ev.replyToken);
+    }
+  });
+  return ContentService.createTextOutput('OK');
+}
 function onFollow(event) {
   const userId = event.source && event.source.userId;
   if (!userId) {
