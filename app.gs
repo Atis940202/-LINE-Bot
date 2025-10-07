@@ -2,6 +2,20 @@
  * 同人場行事曆＋攤位收藏 LINE Bot
  * Apps Script (V8) implementation.
  */
+function getDb() {
+  const prop = PropertiesService.getScriptProperties();
+  const saved = prop.getProperty('DB_ID');
+  if (saved) return SpreadsheetApp.openById(saved);
+
+  // 若已綁定某試算表，直接用它
+  const active = SpreadsheetApp.getActive();
+  if (active) return active;
+
+  // 否則第一次執行就自動建立一份資料庫
+  const ss = SpreadsheetApp.create('Doujin Bot DB');
+  prop.setProperty('DB_ID', ss.getId());
+  return ss;
+}
 
 const SHEET_USERS = 'Users';
 const SHEET_EVENTS = 'Events';
@@ -19,7 +33,7 @@ const DEFAULT_REMIND_MINS = 30;
  * 初始化試算表工作表與標題列。
  */
 function initSheets() {
-  const ss = SpreadsheetApp.getActive();
+  const ss = getDb();
   const definitions = [
     { name: SHEET_USERS, headers: ['id', 'lineUserId', 'name', 'lastEventId', 'lastEventName', 'createdAt'] },
     { name: SHEET_EVENTS, headers: ['id', 'name', 'start', 'end', 'location', 'url', 'openAt', 'note', 'createdAt'] },
