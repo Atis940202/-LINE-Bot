@@ -136,7 +136,8 @@ function doGet(e) {
 // POST：LINE Webhook（就算出錯也回 200）
 function doPost(e) {
   try {
-    return handleCallback(e || {});
+    const response = handleCallback(e || {});
+    return response || createOkTextOutput();
   } catch (err) {
     Logger.log('doPost error: %s', err && err.stack ? err.stack : err);
     return createOkTextOutput();
@@ -161,11 +162,22 @@ function handleCallback(e) {
     if (!event) {
       return;
     }
-    if (event.type === 'follow') {
-      const userId = event.source && event.source.userId;
-      if (!userId) {
+    try {
+      if (typeof handleLineEvent === 'function') {
+        handleLineEvent(event);
         return;
       }
+    } catch (err) {
+      Logger.log('handleLineEvent error: %s', err && err.stack ? err.stack : err);
+      return;
+    }
+
+    const userId = event.source && event.source.userId;
+    if (!userId) {
+      return;
+    }
+
+    if (event.type === 'follow') {
       try {
         ensureUser(userId);
       } catch (err) {
@@ -182,10 +194,6 @@ function handleCallback(e) {
     }
 
     if (event.type === 'message' && event.message && event.message.type === 'text') {
-      const userId = event.source && event.source.userId;
-      if (!userId) {
-        return;
-      }
       let user;
       try {
         user = ensureUser(userId);
@@ -206,6 +214,18 @@ function handleCallback(e) {
   });
 
   return createOkTextOutput();
+}
+
+function handleLineEvent(event) {
+  if (!event || !event.type) {
+    return;
+  }
+  if (event.type === 'follow') {
+    return onFollow(event);
+  }
+  if (event.type === 'message' && event.message && event.message.type === 'text') {
+    return onTextMessage(event);
+  }
 }
 
 function createOkTextOutput() {
