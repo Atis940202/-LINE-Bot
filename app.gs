@@ -11,7 +11,7 @@ function getFinalWebhookUrl() {
 
 function testWebhook() {
   const base = getConfigValue('BASE_URL') || ScriptApp.getService().getUrl();
-  const url = typeof base === 'string' ? base.replace(/\/dev$/, '/exec') : ScriptApp.getService().getUrl();
+  const url = normalizeExecUrl(base);
   const res = UrlFetchApp.fetch(url, {
     method: 'post',
     contentType: 'application/json',
@@ -20,6 +20,23 @@ function testWebhook() {
   });
   Logger.log('code=' + res.getResponseCode());
   Logger.log('body=' + res.getContentText());
+}
+
+function normalizeExecUrl(url) {
+  if (!url) {
+    return ScriptApp.getService().getUrl();
+  }
+  let normalized = String(url).trim();
+  const hashIndex = normalized.indexOf('#');
+  if (hashIndex >= 0) {
+    normalized = normalized.slice(0, hashIndex);
+  }
+  normalized = normalized.replace(/\?.*$/, '');
+  normalized = normalized.replace(/\/dev$/, '/exec');
+  if (!/\/exec$/.test(normalized)) {
+    normalized = normalized.replace(/\/$/, '') + '/exec';
+  }
+  return normalized;
 }
 
 function getDb() {
@@ -113,20 +130,17 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.a === 'admin') {
     return handleAdmin(e);
   }
-  return ContentService.createTextOutput('OK').setMimeType(ContentService.MimeType.TEXT);
+  return createOkTextOutput();
 }
 
 // POST：LINE Webhook（就算出錯也回 200）
 function doPost(e) {
   try {
-    const output = handleCallback(e || {});
-    if (output) {
-      return output;
-    }
+    return handleCallback(e || {});
   } catch (err) {
     Logger.log('doPost error: %s', err && err.stack ? err.stack : err);
+    return createOkTextOutput();
   }
-  return ContentService.createTextOutput('OK').setMimeType(ContentService.MimeType.TEXT);
 }
 
 // handleCallback ：容忍空/壞 JSON
@@ -140,8 +154,9 @@ function handleCallback(e) {
   }
   const events = Array.isArray(body.events) ? body.events : [];
   if (events.length === 0) {
-    return ContentService.createTextOutput('OK').setMimeType(ContentService.MimeType.TEXT);
+    return createOkTextOutput();
   }
+
   events.forEach(event => {
     if (!event) {
       return;
@@ -163,7 +178,10 @@ function handleCallback(e) {
           Logger.log('onFollow error: %s', err && err.stack ? err.stack : err);
         }
       }
-    } else if (event.type === 'message' && event.message && event.message.type === 'text') {
+      return;
+    }
+
+    if (event.type === 'message' && event.message && event.message.type === 'text') {
       const userId = event.source && event.source.userId;
       if (!userId) {
         return;
@@ -186,6 +204,11 @@ function handleCallback(e) {
       }
     }
   });
+
+  return createOkTextOutput();
+}
+
+function createOkTextOutput() {
   return ContentService.createTextOutput('OK').setMimeType(ContentService.MimeType.TEXT);
 }
 
